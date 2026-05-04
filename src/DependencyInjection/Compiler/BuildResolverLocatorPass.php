@@ -15,6 +15,7 @@ use ReflectionMethod;
 use ReflectionNamedType;
 use ReflectionParameter;
 use Symfony\Component\DependencyInjection\Compiler\CompilerPassInterface;
+use Symfony\Component\DependencyInjection\Compiler\ServiceLocatorTagPass;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\Definition;
 use Symfony\Component\DependencyInjection\Reference;
@@ -25,49 +26,30 @@ final class BuildResolverLocatorPass implements CompilerPassInterface
     public function process(ContainerBuilder $container): void
     {
         /**
-         * @var array<string, Reference> $refs
+         * @var array<string, Reference> $services
          */
-        $refs = [];
+        $services = [];
 
-        foreach (array_keys($container->findTaggedServiceIds(GraphqlAttributeSchemaBundle::RESOLVER_TAG)) as $id) {
-            /**
-             * @var class-string $className
-             */
-            $className = $container->getDefinition($id)->getClass() ?? $id;
-
-            $this->collectFromClass(new ReflectionClass($className), $container, $refs);
-        }
-
-        $container->getDefinition('graphql_attribute_schema.resolver_locator')->setArgument(0, $refs);
-    }
-
-    /**
-     * @param ReflectionClass<object>  $reflection
-     * @param array<string, Reference> $refs
-     */
-    private function collectFromClass(ReflectionClass $reflection, ContainerBuilder $container, array &$refs): void
-    {
-        $className = $reflection->getName();
-
-        // Root resolvers (Query / Mutation classes) are fetched by FQCN from the container at runtime.
-        // Register the class as a service if not already, then expose it via the locator.
-        foreach ($reflection->getMethods() as $method) {
-            if ($method->getAttributes(Query::class) !== [] || $method->getAttributes(Mutation::class) !== []) {
-                $this->ensureServiceRegistered($className, $container);
-                $refs[$className] = new Reference($className);
-                break;
+        foreach ($container->findTaggedResourceIds(GraphqlAttributeSchemaBundle::TYPE_TAG) as $id => $tags) {
+            foreach ($tags as $tag) {
+                $reflection = new ReflectionClass($id);
+                foreach ($reflection->getMethods() as $method) {
+                    $this->collectFromMethod($method, $container, $services);
+                }
             }
         }
 
-        foreach ($reflection->getMethods() as $method) {
-            $this->collectFromMethod($method, $container, $refs);
+        foreach (array_keys($container->findTaggedServiceIds(GraphqlAttributeSchemaBundle::ADD_TO_SERVICE_LOCATOR_TAG)) as $id ) {
+            $services[$id] = new Reference($id);
         }
+        
+        $container->setAlias('graphql_attribute_schema.resolver_locator', (string) ServiceLocatorTagPass::register($container, $services));
     }
 
     /**
-     * @param array<string, Reference> $refs
+     * @param array<string, Reference> $services
      */
-    private function collectFromMethod(ReflectionMethod $method, ContainerBuilder $container, array &$refs): void
+    private function collectFromMethod(ReflectionMethod $method, ContainerBuilder $container, array &$services): void
     {
         foreach ($method->getParameters() as $parameter) {
             foreach ($parameter->getAttributes(Autowire::class) as $attr) {
@@ -78,17 +60,7 @@ final class BuildResolverLocatorPass implements CompilerPassInterface
                     continue;
                 }
 
-                $refs[$serviceId] = new Reference($serviceId);
-            }
-        }
-
-        // Deferred type loaders are fetched by FQCN from the container at runtime.
-        foreach ($method->getAttributes(Field::class) as $fieldAttr) {
-            $field = $fieldAttr->newInstance();
-            if ($field->deferredTypeLoader !== null) {
-                $loader = $field->deferredTypeLoader;
-                $this->ensureServiceRegistered($loader, $container);
-                $refs[$loader] = new Reference($loader);
+                $services[$serviceId] = new Reference($serviceId);
             }
         }
     }
@@ -101,20 +73,5 @@ final class BuildResolverLocatorPass implements CompilerPassInterface
         }
 
         return $type->getName();
-    }
-
-    /**
-     * @param class-string $className
-     */
-    private function ensureServiceRegistered(string $className, ContainerBuilder $container): void
-    {
-        if ($container->hasDefinition($className) || $container->hasAlias($className)) {
-            return;
-        }
-
-        $definition = new Definition($className);
-        $definition->setAutowired(true);
-        $definition->setAutoconfigured(true);
-        $container->setDefinition($className, $definition);
     }
 }
