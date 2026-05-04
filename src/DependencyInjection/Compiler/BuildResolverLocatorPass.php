@@ -24,19 +24,21 @@ final class BuildResolverLocatorPass implements CompilerPassInterface
     #[Override]
     public function process(ContainerBuilder $container): void
     {
-        /** @var array<string, Reference> $refs */
+        /**
+         * @var array<string, Reference> $refs
+         */
         $refs = [];
 
         foreach (array_keys($container->findTaggedServiceIds(GraphqlAttributeSchemaBundle::RESOLVER_TAG)) as $id) {
-            /** @var class-string $className */
+            /**
+             * @var class-string $className
+             */
             $className = $container->getDefinition($id)->getClass() ?? $id;
-            $reflection = new ReflectionClass($className);
 
-            $this->collectFromClass($reflection, $container, $refs);
+            $this->collectFromClass(new ReflectionClass($className), $container, $refs);
         }
 
-        $container->getDefinition('graphql_attribute_schema.resolver_locator')
-            ->setArgument(0, $refs);
+        $container->getDefinition('graphql_attribute_schema.resolver_locator')->setArgument(0, $refs);
     }
 
     /**

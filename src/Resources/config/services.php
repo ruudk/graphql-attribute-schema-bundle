@@ -6,8 +6,6 @@ use Jerowork\GraphqlAttributeSchema\Parser;
 use Jerowork\GraphqlAttributeSchema\ParserFactory;
 use Jerowork\GraphqlAttributeSchema\SchemaBuilder;
 use Jerowork\GraphqlAttributeSchema\SchemaBuilderFactory;
-use Jerowork\GraphqlAttributeSchemaBundle\AstProvider;
-use Jerowork\GraphqlAttributeSchemaBundle\SchemaProvider;
 use Symfony\Component\DependencyInjection\Loader\Configurator\ContainerConfigurator;
 use Symfony\Component\DependencyInjection\ServiceLocator;
 
@@ -34,11 +32,4 @@ return static function (ContainerConfigurator $container): void {
     $services->set(SchemaBuilder::class)
         ->factory([service(SchemaBuilderFactory::class), 'create'])
         ->args([service('graphql_attribute_schema.resolver_locator')]);
-
-    $services->set(AstProvider::class)
-        ->args([service(Parser::class), '%graphql_attribute_schema.scan_paths%']);
-
-    $services->set(SchemaProvider::class)
-        ->args([service(SchemaBuilder::class), service(AstProvider::class)])
-        ->public();
 };
